@@ -9,8 +9,11 @@ import (
 )
 
 func main() {
-	// Hello world, the web server
-
+	var handlerFunc http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, r.URL.String())
+	}
+	http.HandleFunc("/url/", handlerFunc)
+	
 	helloHandler := func(w http.ResponseWriter, req *http.Request) {
 		io.WriteString(w, "Customer service!\n")
 	}

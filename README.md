@@ -1,8 +1,8 @@
 # Building Microservices in Go
 One package that we are going to use that contains 80% functionality that we need for building microservices.
-https://pkg.go.dev/std
-https://pkg.go.dev/net@go1.23.3
-https://pkg.go.dev/net/http@go1.23.3
+- https://pkg.go.dev/std
+- https://pkg.go.dev/net@go1.23.3
+- https://pkg.go.dev/net/http@go1.23.3
 
 Two steps:
 - Register our handlers.
@@ -30,9 +30,9 @@ Two steps:
 ## Creating Default Server
 
 ### Creating Secure Server with TLS
-Using below two methods weget access to default server: 
-https://pkg.go.dev/net/http@go1.23.3#ListenAndServe
-https://pkg.go.dev/net/http@go1.23.3#ListenAndServeTLS
+Using below two methods we get access to default server: 
+- https://pkg.go.dev/net/http@go1.23.3#ListenAndServe
+- https://pkg.go.dev/net/http@go1.23.3#ListenAndServeTLS
 
 #### Using ListenAndServe
 This is what we did above.
@@ -99,7 +99,7 @@ https://pkg.go.dev/net/http@go1.23.3#Server
 
 The Default Server we have been using is preconfigured instance of s Server object that's exactly the same type we can create. 
 
-There are some disadvantages of using that default server and that surrounds the methods that we have available on the Server object when we have access to that instance directly, e.g. (Close)[https://pkg.go.dev/net/http@go1.23.3#Server.Close], (Shutdown)[https://pkg.go.dev/net/http@go1.23.3#Server.Shutdown] & (RegisterOnShutdown)[https://pkg.go.dev/net/http@go1.23.3#Server.RegisterOnShutdown] methods, there are couple of others but these are the three that we really want to key in on.
+There are some disadvantages of using that default server and that surrounds the methods that we have available on the Server object when we have access to that instance directly, e.g. [Close](https://pkg.go.dev/net/http@go1.23.3#Server.Close), [Shutdown](https://pkg.go.dev/net/http@go1.23.3#Server.Shutdown) & [RegisterOnShutdown](https://pkg.go.dev/net/http@go1.23.3#Server.RegisterOnShutdown) methods, there are couple of others but these are the three that we really want to key in on.
 
 **Close** method doesn't allow any inflight request to finish and we get 500 error for inflight request. However **Shutdown** method is more graceful and allows in-flight requests to complete.
 
@@ -125,3 +125,52 @@ s := http.Server{
 ```
 
 Reson we need to pass context to shutdown is because if it takes too long and context gets cancelled, you can cancel the shutdown and immediately go to close. But we don't actually need that so we can have Background context here.
+
+# Handling Requests
+Go provides two mechanisms for that:
+
+## Using Simple Function
+Register a simple function to handle the request itself and we do that using **HandleFunc** function from http package.
+```go
+http.HandleFunc(pattern string, func(w http.ResponseWriter, req *http.Request){})
+```
+ResponseWriter is an interface with three methods on it:
+```go
+type ResponseWriter interface {
+    Header() Header                 // used to interact with response header 
+    Write([]byte) (int, error)      // implements io.Writer interface
+    WriteHeader(statusCode int)      
+}
+```
+
+Request object is a pointer to an actual struct, so we are going to receive an actual pointer to an object here.
+https://pkg.go.dev/net/http@go1.23.3#Request
+
+So anything you want to find about the client, it's buried somewhere in the Request object.
+
+```go
+type Request struct {
+    // a lot of stuff here! We'll see this later.
+}
+```
+
+**HandleFunc** takes a function ```func(w http.ResponseWriter, req *http.Request){}``` that actually have a special type in Go, called a [HandlerFunc](https://pkg.go.dev/net/http@go1.23.3#HandlerFunc)
+
+```go
+type HandlerFunc func(ResponseWriter, *Request)
+```
+
+So it's a type of a function that takes **ResponseWriter** and pointer to **Request** object. So you can pass a function and Go will implicitly convert it to a **HandlerFunc**, it knows how to do that.
+
+But if you are creating standalone functions, it's important to recognize Go can't just take a standard function, it does need it to be typed as **HandlerFunc**. 
+
+So let's create a custom function that just prints the URI that request came from:
+
+```go
+var handlerFunc http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintln(w, r.URL.String())
+}
+http.HandleFunc("/url/", handlerFunc)
+```
+
+If we hit ```http://localhost:3000/url``` or ```http://localhost:3000/url/foo/bar/baz``` same request handler gets called. The reason for that is Go's pattern matching. First parameter is pattern. The pattern that we are matching is a best fit wins.
