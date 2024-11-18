@@ -377,3 +377,185 @@ So **FileServer** type in Go is very powerful. It allows us directory browsing, 
 
 So if you've got multiple static resources, so for example you are building a web application and you've got CSS files, JavaScript files and image files that you need to serve up. You can setup a static file server using one simple Handler and Go is going to take care of all the heavy lifting for you.
 
+# JSON Messaging
+We have two general categories of messaging that we can talk about:
+- Language Specific Messaging
+  - E.g. Golang based
+- Platform neutral options
+
+## Pros & Cons
+- Language specific messaging are fast, platform neutral messaging is slower.
+- Language specific messaging tends to be very efficient, platform neutral messaging tends to be less efficient.
+  - Platform neutral messaging need more data to be send.
+- Language specific messaging is Easy to implement as they are often built into standard libraries or frameworks that are optimized to make using these strategies very easy. Platform neutral formats can add complexity.
+- Language specific options tend to encourage reusable code because client and server in these type of architecture are in the same language, we often have shared source code between those clients and servers. In platform neutral messaging we also have reusability but in messaging format. So format often is defined in single place 
+- With Language Specific options we have risk of platform lock-in. In platform neutral messaging we have freedom. And this is the single biggest reason that platform neutral option is mostly used.
+
+## Platform Neutral Messaging
+- JSON Messaging
+- gRPC Messaging
+
+## Sending JSON Messages
+```go
+import "encoding/json"
+import "bytes"
+
+type Customer struct {
+    ID int
+    Firstname string
+    Lastname string
+    Address string
+}
+
+func convertToJSON(c Customer) ([]byte, error) {
+    data, err := json.Marshal(c)
+    return data, err
+}
+```
+
+Marshal function coverts Go objects into JSON. You might notice that Marshal returns []byte. JSON is text based protocol but since it's often used to communicate between services those inter service communications are always handled at the binary level and the way that Go models is using byte slices.
+
+In Go wherever we have public field, it starts with capital letter and so when we convert it into JSON representation, GO is just going to take those field names and it's going to use those as field identifiers in our JSON message. The problem comes in when we look at the JavaScript convention, which is what JSON follows for variable naming and that is it uses lowercase first letters almost universally. So, if were to just convert this Customer object into a JSON representation, the field names would look right to us as GO devlopers but it wouldn't look right to anybody else because where we would pass in a Capital ID, they would be expecting lowercase id.
+
+The way that we describe that transformation between the go field names and the JavaScript convention is using what are called **Struct Field tags** as below:
+
+```go
+type Customer struct {
+    ID int  `json="id"`
+    Firstname string `json="firstName"`
+    Lastname string `json="lastName"`
+    Address string  `json="address"`
+}
+```
+
+Marshal function is not the only way to convert from a Go object to JSON representation. We also have an object that we can construct from the JSON package and that is called an **Encoder**.
+
+```go
+func convertToJSON(c Customer) ([]byte, error) {
+    var b bytes.Buffer
+    enc := json.NewEncoder(b)
+    err := enc.Encode(c)
+    return b.Bytes(), err
+}
+```
+
+Encoders are resuable however marshal function is one shot deal. If you have go one Go object that you want to convert to JSON, then Marshal function is going to be a great way to go.
+
+However, if you are encoding multiple objects, which can sometimes happen in streaming scenarios if you want to encode multiple objects to the response stream then the Encoder allows that Encode method to be called multiple times so you can pass multiple objects in, and then the client can receive those however it needs to.
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+)
+
+func main() {
+	http.HandleFunc("/customers", func(w http.ResponseWriter, r *http.Request) {
+		customers, err := readCustomers()
+		if err != nil {
+			log.Print(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return // important to exit out of handler
+		}
+		data, err := json.Marshal(customers)
+		if err != nil {
+			log.Print(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return // important to exit out of handler
+		}
+		w.Header().Add("content-type", "application/json")
+		w.Write(data)
+	})
+	s := http.Server{
+		Addr: ":3000",
+	}
+	go func() {
+		log.Fatal(s.ListenAndServeTLS("../cert.pem", "../key.pem"))
+	}()
+	fmt.Println("Server started, press <ENTER> to shutdown")
+	fmt.Scanln()
+	s.Shutdown(context.Background())
+	fmt.Println("Server stopped")
+}
+
+type Customer struct {
+	ID        int    `json="id"`
+	Firstname string `json="firstName"`
+	Lastname  string `json="lastName"`
+	Address   string `json="address"`
+}
+
+func readCustomers() ([]Customer, error) {
+	f, err := os.Open("customers.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	customers := make([]Customer, 0)
+	csvReader := csv.NewReader(f)
+	csvReader.Read() // throw away header
+	for {
+		fields, err := csvReader.Read()
+		if err == io.EOF {
+			return customers, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		id, err := strconv.ParseInt(fields[0], 10, 8)
+		if err != nil {
+			log.Fatal(err)
+		}
+		customers = append(customers, Customer{
+			ID:        int(id),
+			Firstname: fields[1],
+			Lastname:  fields[2],
+			Address:   fields[3],
+		})
+	}
+}
+```
+
+## Reading JSON Messages
+```go
+import "encoding/json"
+import "bytes"
+
+type Customer struct {
+    ID        int    `json="id"`
+	Firstname string `json="firstName"`
+	Lastname  string `json="lastName"`
+	Address   string `json="address"`
+}
+
+func convertFromJSON(data []byte) (Customer, error) {
+    var c Customer
+    err := json.UnMarshal(data, &c)
+    return c, err
+}
+```
+
+Here Go used reflection to understand what is the structure of the Object &c.
+It can also populate a map instead of GO object.
+
+What happens if there are multiple objects coming in? For that we have the **Decoder**. Decoder takes a datasource that we can read from consistently. We can pass request body but we don't have one. In this case we can pass data of type []byte but byte slice is not a reader. So we are going to create a buffer from bytes package.
+
+```go
+func convertFromJSON(data []byte) (Customer, error) {
+    b := bytes.NewBuffer(data)  // must be an io.Reader
+    dec := json.NewDecoder(b)
+    var c Customer //could use map[string]any too
+    err := dec.Decode(&c)
+    return c, err
+}
+```
