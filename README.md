@@ -174,3 +174,31 @@ http.HandleFunc("/url/", handlerFunc)
 ```
 
 If we hit ```http://localhost:3000/url``` or ```http://localhost:3000/url/foo/bar/baz``` same request handler gets called. The reason for that is Go's pattern matching. First parameter is pattern. The pattern that we are matching is a best fit wins.
+
+## Using Custom Types
+The second mechanism that Go offers us to register Request Handlers is using a a [Handle](https://pkg.go.dev/net/http@go1.23.3#Handle) function. 
+
+Notice that first parameter is same for both **Handle** and **HandleFunc**, but the second parameter is significantly different. With **HandleFunc** we pass a function, with **Handle** we actually have to pass in an instance of a **[Handler](https://pkg.go.dev/net/http@go1.23.3#Handler)**. So what's a handler?  
+
+We see that it's an interface with one method defined on it that takes ResponseWriter & Request as parameter.
+```go
+type Handler interface {
+	ServeHTTP(ResponseWriter, *Request)
+}
+```
+
+So Handle function allows us to create any type we want as long as we have ServeHTTP method on it. So we can setup much more complicated object and can get much more granular over how we handle a request relative to the simple **HandleFunc**, which just accepts a single function.
+
+```go
+func main() {
+    http.Handle("/", myHandler("Customer service"))
+    ....
+}
+type myHandler string
+
+func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, string(mh))
+}
+```
+
+It's simple yet powerful concept, with custom handler in hand, we can bind as many method as we want to it and if we use a more complicated type such as a struct, I can store information in the handler, so I can store state information or whatever I need, in order to support much more complicated workflows than would normally be handled by a simple **HanderFunc**.
