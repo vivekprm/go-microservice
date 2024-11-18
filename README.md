@@ -202,3 +202,30 @@ func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 ```
 
 It's simple yet powerful concept, with custom handler in hand, we can bind as many method as we want to it and if we use a more complicated type such as a struct, I can store information in the handler, so I can store state information or whatever I need, in order to support much more complicated workflows than would normally be handled by a simple **HanderFunc**.
+
+# Adding Headers
+One thing that is important to understand with headers is we generally need to pass headers before we pass the response body back.
+
+```go
+func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("X-Powered-By", "energetic gophers")
+	fmt.Fprintln(w, string(mh))
+	fmt.Fprintln(w, r.Header)
+}
+```
+
+# Handling Http Cookies
+To work with cookie we can't work with ResponseWriter as it has no method to work with cookies. In http package there is a SetCookie function which takes ResponseWriter as first parameter. 
+
+```go
+func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    "session-id",
+		Value:   "12345",
+		Expires: time.Now().Add(24 * time.Hour * 365),
+	})
+	w.Header().Add("X-Powered-By", "energetic gophers")
+	fmt.Fprintln(w, string(mh))
+	fmt.Fprintln(w, r.Header)
+}
+```
