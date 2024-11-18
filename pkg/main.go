@@ -3,13 +3,42 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
 func main() {
-	http.Handle("/", myHandler("Customer service"))
+	// http://localhost:3000/files/customers.csv
+	http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir("."))))
+
+	http.HandleFunc("/servecontent", func(w http.ResponseWriter, r *http.Request) {
+		customerFile, err := os.Open("./customers.csv")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer customerFile.Close()
+		http.ServeContent(w, r, "customerdata.csv", time.Now(), customerFile)
+	})
+	http.HandleFunc("/servefile", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./customers.csv")
+	})
+	http.HandleFunc("/fprint", func(w http.ResponseWriter, r *http.Request) {
+		customerFile, err := os.Open("./customers.csv")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer customerFile.Close()
+
+		// data, err := io.ReadAll(customerFile)
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// fmt.Fprint(w, string(data))
+		io.Copy(w, customerFile)
+	})
 	s := http.Server{
 		Addr: ":3000",
 	}
@@ -20,17 +49,4 @@ func main() {
 	fmt.Scanln()
 	s.Shutdown(context.Background())
 	fmt.Println("Server stopped")
-}
-
-type myHandler string
-
-func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:    "session-id",
-		Value:   "12345",
-		Expires: time.Now().Add(24 * time.Hour * 365),
-	})
-	w.Header().Add("X-Powered-By", "energetic gophers")
-	fmt.Fprintln(w, string(mh))
-	fmt.Fprintln(w, r.Header)
 }

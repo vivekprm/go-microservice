@@ -229,3 +229,151 @@ func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, r.Header)
 }
 ```
+
+# Setting Status Codes
+Http status codes are defined here. https://pkg.go.dev/net/http@go1.23.3#pkg-constants
+
+```go
+func (mh myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    "session-id",
+		Value:   "12345",
+		Expires: time.Now().Add(24 * time.Hour * 365),
+	})
+	w.Header().Add("X-Powered-By", "energetic gophers")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, string(mh))
+	fmt.Fprintln(w, r.Header)
+}
+```
+
+# Serving Static Content
+There are below methods to server static content:
+- Using ```fmt.Fprint```
+- Using ```http.ServeFile```
+- Using ```http.ServeContent```
+- Using ```http.FileServer```
+
+We are going to customer.csv file here, but instead of csv processing we are going to send this text file directly to the requester.
+
+## Using ```fmt.Fprint```
+
+```go
+http.HandleFunc("/fprint", func(w http.ResponseWriter, r *http.Request) {
+    customerFile, err := os.Open("./customers.csv")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer customerFile.Close()
+
+    data, err := io.ReadAll(customerFile)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Fprint(w, string(data))
+})
+```
+
+What's important for us to remember at this point of time is, if we are going to use **Fprint**, we need something that meets the **io.Writer** interface. In this case w variable that we receive in our handler implements **io.Writer** interface.
+
+Now another option that we have that doesn't require type conversion is ```io.Copy``` function, which allows us to copy from a **Reader** to **Writer**.
+
+```go
+http.HandleFunc("/fprint", func(w http.ResponseWriter, r *http.Request) {
+    customerFile, err := os.Open("./customers.csv")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer customerFile.Close()
+    io.Copy(w, customerFile)
+})
+```
+
+It's directly going to stream the data directly from file to response.
+
+## Using ```http.ServeFile```
+Next function that we are going to look at is: https://pkg.go.dev/net/http@go1.23.3#ServeFile
+
+```go
+func ServeFile(w ResponseWriter, r *Request, name string)
+```
+
+Here last parameter **name** is relative path to the file we want to serve.
+
+```go
+http.HandleFunc("/servefile", func(w http.ResponseWriter, r *http.Request) {
+    http.ServeFile(w, r, "./customers.csv")
+})
+```
+
+You notice in this case that here we do get that file downloaded. So **ServeFile** is going to assume that when we are serving that file, it's going to add appropriate headers for a downloadable file. Now to get some more insight on what just happened, lets open our developer tools and check the headers that's being set. 
+E.g. in this case Response Header **Content-Type** is being set as **application/vnd.ms-excel**. So ServeFile automatically detected the content type for us, since chrome doesn't have native reader for that it decided to download it.
+
+## Using ```http.ServeContent```
+[http.ServeContent](https://pkg.go.dev/net/http@go1.23.3#ServeContent) looks very similar to ServeFile method.
+
+```go
+func ServeContent(w ResponseWriter, req *Request, name string, modtime time.Time, content io.ReadSeeker)
+```
+
+**ServeFile** is optimized for serving a file off of your file system. **ServeContent** is more flexible, it's designed to serve anything that meets the [ReadSeeker](https://pkg.go.dev/io#ReadSeeker) interface. In short, ReadSeeker had ```Read``` mwthod on it and ```Seek``` method on it.
+
+Now a common **ReadSeeker** is, in fact, a file but you can use different things. It's more flexible because it's not relying on a specific file sitting on your file system. In other words, it's work like **io.Copy** but is more optimized for HTTP transaction.
+
+Using third parameter name go does content type detection.
+
+```go
+http.HandleFunc("/servecontent", func(w http.ResponseWriter, r *http.Request) {
+    customerFile, err := os.Open("./customers.csv")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer customerFile.Close()
+    http.ServeContent(w, r, "customerdata.csv", time.Now(), customerFile)
+})
+```
+
+## Using ```http.FileServer```
+What are we talking about setting a file server? haven't we done that?
+Not quite, **ServeFile** function is designed to serve a single resource. You notice that we actually provide the name of the file we want to serve. What happens if we have got multiple resources that we want to serve. That's what we want to look at next.
+
+Now there are several functions that typically work together to commplish this goal. So lets go ahead and jump over to the HTTP documentation.
+
+https://pkg.go.dev/net/http@go1.23.3#FileServer
+
+First function that we want to look at is Constructor function what we mean by that is we are actually going to be constructing a **Handler**.
+
+So **FileServer** are handler, they have complicated internal API that allows them to accomplish their mission.
+```go
+func FileServer(root FileSystem) Handler
+```
+
+It takes one parameter 'root' which is of [FileSystem](https://pkg.go.dev/net/http@go1.23.3#FileSystem) type. **FileSystem** type is an interface which has just one method **Open**
+
+[Dir](https://pkg.go.dev/net/http@go1.23.3#Dir) is of type FileSystem as it implements Open method. It's extension of string.
+
+```go
+type FileSystem interface {
+	Open(name string) (File, error)
+}
+```
+
+Last function that we need is [StripPrefix] (https://pkg.go.dev/net/http@go1.23.3#StripPrefix) constructor function.
+
+```go
+func StripPrefix(prefix string, h Handler) Handler
+```
+
+It takes two parameters, it takes a Handler and returns a Handler. So it's a decorator. It's going to take a Handler and it's going to modify the behaviour of that handler in someway. In this case it's going to strip prefix off.
+
+When in path pattern we have a trailing slash, we are implying that there is a collection of resources. So think about it as a single file in your file system versus a directory.
+
+```go
+http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir("."))))
+```
+
+If we open up our developer tool and click on any file, it sends correct Content-Type set.
+So **FileServer** type in Go is very powerful. It allows us directory browsing, it allows us to serve up resources and it provides automatic content detection.
+
+So if you've got multiple static resources, so for example you are building a web application and you've got CSS files, JavaScript files and image files that you need to serve up. You can setup a static file server using one simple Handler and Go is going to take care of all the heavy lifting for you.
+
