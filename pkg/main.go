@@ -1,15 +1,18 @@
 package main
 
 import (
-	"fmt"
+	"io"
 	"log"
 	"net/http"
 )
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Hello world!")
-	})
-	// By providing nil, we tell Go to use standard handler
-	log.Fatal(http.ListenAndServe(":3000", nil))
+	// Hello world, the web server
+
+	helloHandler := func(w http.ResponseWriter, req *http.Request) {
+		io.WriteString(w, "Customer service!\n")
+	}
+
+	http.HandleFunc("/", helloHandler)
+	log.Fatal(http.ListenAndServeTLS(":3000", "../cert.pem", "../key.pem", nil))
 }
