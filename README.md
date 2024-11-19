@@ -559,3 +559,27 @@ func convertFromJSON(data []byte) (Customer, error) {
     return c, err
 }
 ```
+
+# Routing Requests
+When we talk about HTTP routing, we generally have three types of routing concerns to keep in mind.
+- The request for single resource and it uses URL patterns like: /customers
+- Request for resource collection: /customers/
+- Parametric routes: Request a resource by parameter: /customers/{id}
+
+## Basic Routing
+Basic routing really boils down to below part of the parameter list when we call the **Handle** function or the **HandleFunc** function from the http package.
+
+```go
+http.Handle(pattern string, handler http.Handler)
+```
+
+Go is going to select the most specific pattern that it can that meets the incoming URL pattern. Now there are two different forms of this pattern that we can register with the **Handle** and **HandleFunc** functions.
+
+- request a single resource
+```go
+http.Handle("/customers", handler)
+```
+- request a resource collection
+```go
+http.Handle("/customers/", handler)
+```
