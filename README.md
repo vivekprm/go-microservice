@@ -640,3 +640,47 @@ func handlerFunc(w http.ResponseWriter, r *http.Request) {
 ```
 
 So while Regular expressions are more complicated to construct, they do often make the validation logic in our handler a little bit easier. Having said that though we often do have a little bit of validation that's required.
+
+## Common Third Party Routers
+Two popular thrid party routers are:
+- **gorilla/mux**
+```sh
+go get github.com/gorilla/mux
+```
+We can work with mux router without dealing with complexity of regular expression but get the benifits of regular expression
+
+```go
+r := mux.NewRouter()
+r.HandleFunc("/products/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    idRaw := vars["id"]
+    if len(idRaw) == 0 {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
+    id, err := strconv.Atoi(idRaw)
+    if err != nil {
+        log.Println(err)
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
+
+    for _, p := range products {
+        if p.ID == id {
+            data, err := json.Marshal(p)
+            if err != nil {
+                log.Println(err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return
+            }
+            w.Header().Add("Content-Type", "application/json")
+            w.Write(data)
+            return
+        }
+    }
+    w.WriteHeader(http.StatusNotFound)
+})
+
+http.Handle("/", r)
+```
+- **go-chi/chi**
