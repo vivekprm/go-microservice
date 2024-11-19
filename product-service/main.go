@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 )
 
 type Product struct {
@@ -19,8 +19,8 @@ type Product struct {
 }
 
 func main() {
-	r := mux.NewRouter()
-	r.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
+	r := chi.NewRouter()
+	r.Get("/products", func(w http.ResponseWriter, r *http.Request) {
 		data, err := json.Marshal(products)
 		if err != nil {
 			log.Println(err)
@@ -31,9 +31,8 @@ func main() {
 		w.Write(data)
 	})
 	// /products/3
-	r.HandleFunc("/products/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		idRaw := vars["id"]
+	r.Get("/products/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
+		idRaw := chi.URLParam(r, "id")
 		if len(idRaw) == 0 {
 			w.WriteHeader(http.StatusBadRequest)
 			return
