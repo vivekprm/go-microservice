@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type Product struct {
@@ -27,14 +28,20 @@ func main() {
 		w.Header().Add("Content-Type", "application/json")
 		w.Write(data)
 	})
+	// /products/3
 	http.HandleFunc("/products/", func(w http.ResponseWriter, r *http.Request) {
-		idRaw := r.URL.Query().Get("id")
-		id, err := strconv.Atoi(idRaw)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
+		parts := strings.Split(r.URL.Path, "/") // ["", "products", "3"]
+		if len(parts) != 3 {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		id, err := strconv.Atoi(parts[2])
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
 		for _, p := range products {
 			if p.ID == id {
 				data, err := json.Marshal(p)

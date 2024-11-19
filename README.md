@@ -583,3 +583,60 @@ http.Handle("/customers", handler)
 ```go
 http.Handle("/customers/", handler)
 ```
+
+## Parametric Routing
+A very common practice with HTTP services is encoding information into the URL itself that we rely on to help the microservice understand what we are asking it to do.
+
+There are generally two techniques available to us within the standard library to extract those parameters from the URL:
+
+### String Splitting
+```go
+func handlerFunc(w http.ResponseWriter, r *http.Request) {
+    path := r.URL.Path // "/customers/123/address/city"
+
+    parts := strings.Split(path, "/") // ["" "customers "123" "address" "city"]
+
+    // validate the parameters & route requests.
+}
+```
+
+So in this case we have two parameters 123 & city. In String splitting we simply split the string with '/'. We need to validate the parameters & route requests because it doesn't guarantee that parameters are properly formatted.
+
+### Using Regular Expression
+Let's assume in ```/customers/123/address/city``` customers and address are static part of the route and 123 & city are parameters, they can change but we want the same basic handling we're just going to apply slightly different business logic depending on the parameters that are coming into our handler.
+
+So how do we break this down with regular expressions, and what are the advantages?
+We are going to start with Regular Expression that looks like this pattern and that looks something like this:
+
+```go
+var pattern = `^\/customers\/(\d+?)\/address\/(\S+?)`
+var exp regexp.Regexp = regexp.MustCompile(pattern)
+```
+
+```\S``` instructs to match non-whitespace characters.
+```\d``` instructs to mathc numeric value.
+
+With Go regular expressions are not just strings, they are objects and we construct those by using from the ```regexp``` package, we construct that regular expression. 
+
+There are multiple constructor functions that are available, we are using ```MustCompile``` constructor function.
+
+Once we have regular expression object there's rich API of matching methods that are included on those regular expressions. In this case we are using **FindStringSubmatch**. If you look at regular expression package there are 20-30 different methods that are available, each one tuned for specific usecase that we want.
+
+In this case, we decompose **FindStringSubmatch**, we see that **Find** means that we're going to try and find a match and **String** means that we're matching against a string and the reason we have that is because Go allows us to match regular expressions against byte slices as well, so we need to be specific about what we're providing. And then **Submatch** indicates that there are elements of the match that we are interested in extracting later.
+
+So we don't just want Go to say, yep, this string matches your pattern. We also want to provide key pieces of information so that we can work with those later and those key pieces of information, if we go back up to the pattern, notice that we have delimited the parameters in these parantheses. These parantheses indicate that this is interesting for me to work with later. In other words, these are our Submatches and that's why we see in the matches slice that we get as a result we see that we have 3 elements.
+
+First element is always the full string that got matched, then after that there are any submatches or any what are called capture groups in the terminology of regular expressions.
+So our first capture group, our first set of parantheses is around that string "123", and our second capture group is around the pattern that gets matched to the word "city".
+
+```go
+var pattern = `^\/customers\/(\d+?)\/address\/(\S+?)`
+var exp regexp.Regexp = regexp.MustCompile(pattern)
+
+func handlerFunc(w http.ResponseWriter, r *http.Request) {
+    path := r.URL.Path // "/customers/123/address/city"
+    matches := exp.FindStringSubmatch(path) // ["/customers/123/address/city", "123", "city"]
+}
+```
+
+So while Regular expressions are more complicated to construct, they do often make the validation logic in our handler a little bit easier. Having said that though we often do have a little bit of validation that's required.
