@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"regexp"
 	"strconv"
+
+	"github.com/gorilla/mux"
 )
 
 type Product struct {
@@ -18,7 +19,8 @@ type Product struct {
 }
 
 func main() {
-	http.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
+	r := mux.NewRouter()
+	r.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
 		data, err := json.Marshal(products)
 		if err != nil {
 			log.Println(err)
@@ -29,14 +31,14 @@ func main() {
 		w.Write(data)
 	})
 	// /products/3
-	pattern := regexp.MustCompile(`^\/products\/(\d+?)$`)
-	http.HandleFunc("/products/", func(w http.ResponseWriter, r *http.Request) {
-		matches := pattern.FindStringSubmatch(r.URL.Path) // ["/products/3", "3"]
-		if len(matches) == 0 {
+	r.HandleFunc("/products/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		idRaw := vars["id"]
+		if len(idRaw) == 0 {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		id, err := strconv.Atoi(matches[1])
+		id, err := strconv.Atoi(idRaw)
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -58,6 +60,9 @@ func main() {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	})
+
+	http.Handle("/", r)
+
 	s := http.Server{
 		Addr: ":4000",
 	}
