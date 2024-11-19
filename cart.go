@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -20,13 +22,57 @@ var carts = make([]Cart, 0)
 var cartMux = http.NewServeMux()
 
 func createShoppingCartService() *http.Server {
-	cartMux.HandleFunc("/carts", cartsHandler)
+	cartMux.Handle("/carts", &validationMiddleware{next: http.HandlerFunc(cartsHandler)})
 
 	s := http.Server{
 		Addr:    ":4040",
 		Handler: &loggingMiddleware{next: cartMux},
 	}
 	return &s
+}
+
+type validationMiddleware struct {
+	next http.Handler
+}
+
+func (vm *validationMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if vm.next == nil {
+		log.Panic("No next handler defined for validation middleware")
+	}
+	if r.Method != http.MethodPost {
+		vm.next.ServeHTTP(w, r)
+		return
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var c Cart
+	err = json.Unmarshal(data, &c)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	res, err := http.Head(fmt.Sprintf("http://localhost:3000/customers/%v", c.CustomerID))
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if res.StatusCode == http.StatusNotFound {
+		log.Println("Invalid customer ID")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	b := bytes.NewBuffer(data)
+	r.Body = io.NopCloser(b)
+	vm.next.ServeHTTP(w, r)
 }
 
 type loggingMiddleware struct {

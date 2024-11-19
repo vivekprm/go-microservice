@@ -741,5 +741,85 @@ func (m MyMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 ## Types Of Middlewares
 - Global
   - Applies to all requests
+```go
+type loggingMiddleware struct {
+	next http.Handler
+}
+
+func (lm *loggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if lm.next == nil {
+		lm.next = cartMux
+	}
+	slog.Info(fmt.Sprintf("Received %v request on route: %v", r.Method, r.URL.Path))
+	now := time.Now()
+	lm.next.ServeHTTP(w, r)
+	slog.Info(fmt.Sprintf("Response generated for %v on route %v. Duration: %v", r.Method, r.URL.Path, time.Since(now)))
+}
+```
 - Route-Specific
   - Applies to specific handler
+```go
+type validationMiddleware struct {
+	next http.Handler
+}
+
+func (vm *validationMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if vm.next == nil {
+		log.Panic("No next handler defined for validation middleware")
+	}
+	if r.Method != http.MethodPost {
+		vm.next.ServeHTTP(w, r)
+		return
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var c Cart
+	err = json.Unmarshal(data, &c)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	res, err := http.Head(fmt.Sprintf("http://localhost:3000/customers/%v", c.CustomerID))
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if res.StatusCode == http.StatusNotFound {
+		log.Println("Invalid customer ID")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	b := bytes.NewBuffer(data)
+	r.Body = io.NopCloser(b)
+	vm.next.ServeHTTP(w, r)
+}
+```
+
+**DefaultServeMux** makes sense for global middleware because that gets invoked before the routing in the application. With route-specific middleware we've already gone through the routing process, we know exactly what handler should be invoked and so there is no default that we can pick if that next handler has not been defined.
+
+Request body can be read once. So we need to be careful, if we are reading it in middleware we can't read it anywhere else. So for example above in validationMiddleware we already read the request body so it will fail in running cartsHandler post method handling, where we are reading request body.
+So how do we get request body back again?
+So we create a new buffer from the bytes package and populate it with the data that we got when we read the request body out. So actually we are going to create a brand new request body, but we are going to create it using buffer instead of the default object that came in with the request. This works because the request body simply has to implement the **ReadCloser** interface. We don't actually have any details about what actual object Go is using here. 
+
+Only thing that we have to keep in mind is that **ByteBuffer** doesn't have a **Close** method on it, so there is a decorator that we can use from the io package called **NopCloser**.
+
+```go
+b := bytes.NewBuffer(data)
+r.Body = io.NopCloser(b)
+```
+
+Now how do we actually get the route specific middleware registered?
+Global middleware we register at server level. Route specific middleware, we register at handler level. So just like Global middleware wraps DefaultServeMux or the serve mux that we are using, we are going to wrap our handler with our validationMiddleware.
+
+```go
+cartMux.Handle("/carts", &validationMiddleware{next: http.HandlerFunc(cartsHandler)})
+```
