@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -30,6 +31,15 @@ func main() {
 	}()
 
 	time.Sleep(1 * time.Second)
+
+	http.Post("http://localhost:4040/carts", "application/json", bytes.NewBufferString(`
+		{
+			"id": 1,
+			"customerId": 999,
+			"productIds": [1, 3]
+		}
+	`))
+
 	res, err := http.Get("http://localhost:4040/carts")
 	if err != nil {
 		log.Println(err)
@@ -60,17 +70,7 @@ func createCustomerService() *http.Server {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/customers/add", func(w http.ResponseWriter, r *http.Request) {
-		var c Customer
-		dec := json.NewDecoder(r.Body)
-		err := dec.Decode(&c)
-		if err != nil {
-			log.Print(err)
-			w.WriteHeader(http.StatusBadRequest)
-			return // important to exit out of handler
-		}
-		log.Println(c)
-	})
+
 	mux.HandleFunc("/customers", func(w http.ResponseWriter, r *http.Request) {
 		data, err := json.Marshal(customers)
 		if err != nil {
@@ -80,7 +80,35 @@ func createCustomerService() *http.Server {
 		}
 		w.Header().Add("content-type", "application/json")
 		w.Write(data)
-		return
+	})
+	pattern := regexp.MustCompile(`^\/customers\/(\d+?)$`)
+	mux.HandleFunc("/customers/", func(w http.ResponseWriter, r *http.Request) {
+		matches := pattern.FindStringSubmatch(r.URL.Path)
+		if len(matches) == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		id, err := strconv.Atoi(matches[1])
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, c := range customers {
+			if id == c.ID {
+				data, err := json.Marshal(c)
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				if r.Method == http.MethodGet {
+					w.Header().Add("Content-Type", "application/json")
+					w.Write(data)
+				}
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
 	})
 	s := http.Server{
 		Addr:    ":3000",
