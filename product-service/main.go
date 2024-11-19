@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
-	"strings"
 )
 
 type Product struct {
@@ -29,13 +29,14 @@ func main() {
 		w.Write(data)
 	})
 	// /products/3
+	pattern := regexp.MustCompile(`^\/products\/(\d+?)$`)
 	http.HandleFunc("/products/", func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(r.URL.Path, "/") // ["", "products", "3"]
-		if len(parts) != 3 {
+		matches := pattern.FindStringSubmatch(r.URL.Path) // ["/products/3", "3"]
+		if len(matches) == 0 {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		id, err := strconv.Atoi(parts[2])
+		id, err := strconv.Atoi(matches[1])
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
