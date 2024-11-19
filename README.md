@@ -684,3 +684,7 @@ r.HandleFunc("/products/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Reques
 http.Handle("/", r)
 ```
 - **go-chi/chi**
+```sh
+go get github.com/go-chi/chi/v5
+```
+
