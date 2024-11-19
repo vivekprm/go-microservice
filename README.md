@@ -688,3 +688,58 @@ http.Handle("/", r)
 go get github.com/go-chi/chi/v5
 ```
 
+# Middlewares
+When we have concerns that are not directly related to business logic of the webservice, we keep that logic in middlewares.
+
+## What is Middleware
+So far, all of our discussions have been around this thing called a **handler**. That is sometimes a function and sometimes an object. But it's always intended to be the thing that's going to hold the business logic that actually handles the request coming in from a client.
+
+So, the model for how these things work is, a request comes in, the handler gets invoked, executes it's business logic, and then a response goes back out. Middleware changes our model slightly by sitting in the middle of Request-Response pipeline.
+
+So instead of request directly going to our request handler, now the request is going to go the middleware. The middleware is going to pass that request on to the request handler, or optionally we could have more middleware in that chain, and then the response is going to go back to the middleware as well.
+
+We often have concerns in our microservices that are not directly related to our business logic e.g. 
+- We might want to add a caching strategy into our service.
+- We might want to put an authentication mechanism
+- We can have session management.
+- We can add logging and telemetry into our systems.
+- We can do response compression, making sure that we are making efficient use of network resources by compressing the responses down and minimizing the data that's sent.
+
+## Creating Middleware
+Middleware sits in the middle of request-response pipeline. Middleware receives the request, passes it on to the request handler, but it also has to generate the response, which means it has the same responsibilities as any other handler.
+
+Let's look at **ListenAndServe** function from **http** package.
+```go
+http.ListenAndServe(addr string, handler Handler) error
+```
+
+So far we have been passing nil for the second parameter because that tells Go to use something called the **DefaultServeMux**, which handles all of the internal routing logic of our application and makes a lot of the hard work for creating services, very simple for us. But this is a valid parameter that we can do other things with.
+
+Middleware is just a **Handler**. 
+```go
+type Handler interface {
+    ServeHTTP(ResponseWriter, *Request)
+}
+```
+
+However, there is one trick or one pattern that we often introduce that makes a distinction between what is middleware and what is normal request handler.
+
+So if we start out to build our middleware we have to answer the question, how do we get that request pass along the chain? This is how we often do it. **We build our middleware as a struct**.
+
+```go
+type MyMiddleware struct {
+    Next http.Handler
+}
+
+func (m MyMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    // do something like authentication, logging etc. before next handler
+    m.Next.ServeHTTP()  // pass request to next handler
+    // do things after next handler
+} 
+```
+
+## Types Of Middlewares
+- Global
+  - Applies to all requests
+- Route-Specific
+  - Applies to specific handler
