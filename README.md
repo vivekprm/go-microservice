@@ -823,3 +823,87 @@ Global middleware we register at server level. Route specific middleware, we reg
 ```go
 cartMux.Handle("/carts", &validationMiddleware{next: http.HandlerFunc(cartsHandler)})
 ```
+
+# gRPC Messaging
+## gRPC Structure
+The way client and server are going to communicate with gRPC is using some generated code and that's going to be one of the key things that we are going to be talking about.
+This generated code on the client talks to the generated code on the server using a **Transport Protocol** and that transport protocol is used for both sending the request to the server and getting those responses back.
+
+The primary protocol that is used in gRPC is a technology called **ProtocolBuffers**.
+
+## Protocol Buffers 101
+```proto
+syntax = "proto3";
+package product;
+option go_package = "demo/productpb";
+message Product {
+	int32 id = 1;
+	string name = 2;
+	double usdPerUnit = 3;
+	string unit = 4;
+}
+```
+
+Both JSON and XML have a shortcoming where they actually have to encode the schema or the format of the data along with the data itself, which made network messaging with JSON & XML inefficient.
+So **ProtocolBuffer** attempts to solve that problem by using numerous techniques.
+
+One of those techniques is we are going to define the schema before we send the messages. So clients and servers are both going to know the structure of the data, not because we send the data schema, but because they have that pre-generated for them.
+
+So let's talk about defining messages. So let's consider the above example:
+- First line is syntax line. There are multiple versions of ProtocolBuffers that have been developed over time. In this case we are usin version 3.
+- Next line is package identifier. This doesn't have anything to do with the organization of our generated code. This is the package identifier we use when we have **ProtocolBuffer** definition files that are talking to one another.
+- Next line is go_package option. There are quite a few optional parameters that can be added into a definition file that controls the code generation for specific languages. In this case the go_package option is going to specify the package identifier that we want our generated code to use.
+- Next thing that we have is message, this defines some data structure that can be sent across the ProtocolBuffer. The number in the end of the field is critical because the way ProtocolBuffer works is that **when it actually transmits a message from a client to a server it doesn't send the field names, it sends these field identifiers.** So field is going to be interpreted by the client and the server as the field id because we've defined that in this message format.
+
+Now to generate code, we download a compiler called protoc compiler.
+https://protobuf.dev/downloads/
+
+When we are working with Go, protoc compiler is not enough. So we are going to add on an additional tool that's going to be installed in our module and this is **protoc-gen-go** command that we don't use directly but is used by the **protoc** compiler when we are generating Go soure code.
+
+```sh
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+```
+
+Finally we invoke the protoc compiler using below command:
+```sh
+protoc -I=. --go_out=. /product.proto
+```
+
+-I in include parameter that tells the protoc compiler where to find all the ProtocolBuffer messages -go_out parameter defines where we want the go source to be rooted at.
+
+To learn more about protocol buffer: https://protobuf.dev
+
+We can define the product as below:
+```go
+p := productpb.Product{
+	Id:         int32(products[0].ID),
+	Name:       products[0].Name,
+	UsdPerUnit: products[0].USDPerUnit,
+	Unit:       products[0].Unit,
+}
+```
+
+Now, the next thing we have to do is we have to convert this Protocol Buffer message into a format that can be sent across the network. We are going to use a Marshal function from **proto** package. **proto** package is not part of standard library. To grab that:
+```sh
+go get google.golang.org/protobuf
+```
+
+```go
+p := productpb.Product{
+	Id:         int32(products[0].ID),
+	Name:       products[0].Name,
+	UsdPerUnit: products[0].USDPerUnit,
+	Unit:       products[0].Unit,
+}
+data, err := proto.Marshal(&p)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(string(data))
+```
+
+If we print it, it looks like garbage data. That's actually one of the things that we like about Protocol Buffers. While it's not necessarily very readable on the wire, this is much more efficient format for sending this data structure than when we compare it to something like JSON.
+
+SO it's not only compressed format, but it's also transmitted as binary data too, which can be more efficient than the string based messaging that JSON uses.
+
+How do we convert back to product we can work with?
