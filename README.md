@@ -907,3 +907,114 @@ If we print it, it looks like garbage data. That's actually one of the things th
 SO it's not only compressed format, but it's also transmitted as binary data too, which can be more efficient than the string based messaging that JSON uses.
 
 How do we convert back to product we can work with?
+```go
+var p2 productpb.Product
+err = proto.Unmarshal(data, &p2)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Printf("%+v", p2)
+```
+
+## Creating gRPC client & server
+There is another type in Protobuf called **Service**. Which is used to create gRPC service. We define remote procedures in this service type.
+
+```proto
+syntax = "proto3";
+...
+service Product {
+	rpc GetProduct (Request) returns (Response);
+}
+```
+
+What gRPC does with this is, it take these message definition files, this product service file and it will use the same source code to generate a **Client Stub** and a **Server Interface**. So the Client Stub is going to provide a model for how the server needs to be invoked.
+
+So from client's standpoint we're just going to call a procedure on our client, and then the actual communication with the server is going to happen behind the scene.
+
+From our standpoint on the client code, it's going to look like we just called a function on the client. We don't know that network was involed and communication happened with the server.
+
+The **Server Interface** is going to define the structure that we need to provide to our server to act as a gRPC server for the service that we defined. SO obviously Go doesn't know what the business logic is that we need to implement, so we're going to need to provide that logic for it.
+
+The Service defines the structure that that logic needs to be housed within.
+
+Now, just like when generating Go source code from simple Protocol Buffers, we do need to have an additional helper.
+```sh
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+```
+
+To generate our source code run below command:
+```sh
+protoc -I=. --go_out=. --go-grpc_out=. /product.proto
+```
+
+This is how generated code will look like:
+```go
+type ProductClient interface {
+	GetProduct(ctx context.Context, in *GetProductRequest, opts ...grpc.CallOption) (*GetProductReply, error)
+}
+```
+
+Fortunately client is generated for us through generated code. But we do have to retrieve a client and the way that we do that is we are going to use a Constructor function that was created by the generated code, and we are going to pass in a connection object, and the connection object is going to tell the client where to find the server that it's going to communicate with.
+
+```go
+client := NewProductClient({connection})
+```
+
+Now on the server side, we get a little bit less help. We are just going to get an interface that we are going to have to implement.
+
+```go
+type ProductServer interface{
+	GetProduct(context.Context, in *GetProductRequest) (*GetProductReply, error)
+}
+```
+
+But notice the interface looks very similar to the client interface.
+
+Complete product service
+```proto
+syntax = "proto3";
+
+package productService;
+
+import "product.proto";
+
+option go_package = "grpc-demo/productpb";
+
+message GetProductRequest { int32 productId = 1; }
+
+message GetProductReply { product.Product product = 1; }
+
+service Product {
+  rpc GetProduct(GetProductRequest) returns (GetProductReply) {}
+}
+```
+
+This is how we implement Product Service
+```go
+type ProductService struct {
+	productpb.UnimplementedProductServer
+}
+
+func (ps ProductService) GetProduct(ctx context.Context, req *productpb.GetProductRequest) (*productpb.GetProductReply, error) {
+	for _, p := range products {
+		if p.ID == int(req.ProductId) {
+			return &productpb.GetProductReply{
+				Product: &productpb.Product{
+					Id:         int32(p.ID),
+					Name:       p.Name,
+					UsdPerUnit: p.USDPerUnit,
+					Unit:       p.Unit,
+				},
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("product not found with ID: %v", req.ProductId)
+}
+```
+
+Server in this case is just a type, it doesn't actually have any interaction with the network itself. It needs gRPC to setup the network interface for it. So we are going to put all that code in a function called **startGRPCServer**. We need to install another dependency for that:
+```sh
+go get google.golang.org/grpc
+```
+
+To learn more: https://grpc.io
